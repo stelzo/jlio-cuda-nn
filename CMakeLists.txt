@@ -1,18 +1,16 @@
 cmake_minimum_required(VERSION 3.17)
 project(voxel LANGUAGES CUDA CXX)
 
-set(VOXEL_SRC src/voxel.cu)
+set(VOXEL_SRC src/voxel.cu src/common.cu src/memory.cu)
 
-set(CMAKE_CUDA_ARCHITECTURES 72) # TODO find dynamically
+set(CMAKE_CUDA_ARCHITECTURES "native")
 
-#if(NOT DEFINED CMAKE_CUDA_STANDARD)
-set(CMAKE_CUDA_STANDARD 17)
-set(CMAKE_CUDA_STANDARD_REQUIRED ON)
-#endif()
+if(NOT DEFINED CMAKE_CUDA_STANDARD)
+  set(CMAKE_CUDA_STANDARD 14)
+  set(CMAKE_CUDA_STANDARD_REQUIRED ON)
+endif()
 
-
-set(CUDA_INCLUDE_DIRS /usr/local/cuda/targets/${CMAKE_SYSTEM_PROCESSOR}-linux/include/)
-
+set(USE_CUDA 1)
 
 set(VOXEL_INCLUDES
   ${PCL_INCLUDE_DIRS}
@@ -27,8 +25,9 @@ list(APPEND VOXEL_LIBS
   ${CUDA_LIBRARIES}
 )
 list(APPEND VOXEL_INCLUDES
-  ${CUDA_INCLUDE_DIRS}
+  include
   ext/cuCollections/cuCollections/include
+  /usr/local/cuda/targets/${CMAKE_SYSTEM_PROCESSOR}-linux/include
 )
 
 if(BUILD_SHARED_LIBS)

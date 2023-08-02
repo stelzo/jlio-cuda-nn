@@ -1,3 +1,5 @@
+#define USE_CUDA 1
+
 #include "voxel/voxel.cuh"
 
 #include <thrust/binary_search.h>
@@ -37,11 +39,7 @@ IVoxNodePhc::IVoxNodePhc(const jlio::PointXYZINormal& center, const float& side_
     phc_side_length_inv_ = (std::pow(2, phc_order_)) / side_length_;
     float half_side_length = side_length_ / 2.0;
     min_cube_ = rmagine::Vector3f(center.x - half_side_length, center.y - half_side_length, center.z - half_side_length);
-    phc_cubes_ = stdgpu::vector<IVoxNodePhc::PhcCube>::createDeviceObject(64);
-}
-
-IVoxNodePhc::~IVoxNodePhc() {
-    stdgpu::vector<IVoxNodePhc::PhcCube>::destroyDeviceObject(phc_cubes_);
+    phc_cubes_.reserve(64);
 }
 
 struct insert_point_lb_functor
@@ -57,22 +55,20 @@ void IVoxNodePhc::InsertPoint(const jlio::PointXYZINormal& pt) {
     uint32_t idx = CalculatePhcIndex(pt);
 
     PhcCube cube{idx, pt};
-    auto it = thrust::lower_bound(phc_cubes_.device_begin(), phc_cubes_.device_end(), cube, insert_point_lb_functor());
+    auto it = thrust::lower_bound(phc_cubes_.begin(), phc_cubes_.end(), cube, insert_point_lb_functor());
 
-    if (it == phc_cubes_.device_end()) {
-        phc_cubes_.emplace_back(cube);
+    if (it == phc_cubes_.end()) {
+        phc_cubes_.push_back(cube);
     } else {
         auto found_it = thrust::raw_pointer_cast(it);
         if (found_it->idx == idx) {
             found_it->AddPoint(pt);
         } else {
-            // avoid insert by creating a new vector with the new element TODO check!!!
-            stdgpu::vector<IVoxNodePhc::PhcCube> new_phc_cubes = stdgpu::vector<IVoxNodePhc::PhcCube>::createDeviceObject(phc_cubes_.size() + 1);
-            thrust::copy(phc_cubes_.device_begin(), it, new_phc_cubes.device_begin());
-            new_phc_cubes.push_back(cube);
-            thrust::copy(it, phc_cubes_.device_end(), new_phc_cubes.device_begin() + (it - phc_cubes_.device_begin()) + 1);
-            stdgpu::vector<IVoxNodePhc::PhcCube>::destroyDeviceObject(phc_cubes_);
-            phc_cubes_ = new_phc_cubes;
+            if (found_it->idx == idx) {
+                found_it->AddPoint(pt);
+            } else {
+                phc_cubes_.insert(it, cube);
+            }
         }
     }
 }
@@ -81,15 +77,11 @@ void IVoxNodePhc::ErasePoint(const jlio::PointXYZINormal& pt, const double erase
     uint32_t idx = CalculatePhcIndex(pt);
 
     PhcCube cube{idx, pt};
-    auto it = thrust::lower_bound(phc_cubes_.device_begin(), phc_cubes_.device_end(), cube, insert_point_lb_functor());
+    auto it = thrust::lower_bound(phc_cubes_.begin(), phc_cubes_.end(), cube, insert_point_lb_functor());
 
     auto found_it = thrust::raw_pointer_cast(it);
-    if (it != phc_cubes_.device_end() && found_it->idx == idx) {
-        stdgpu::vector<IVoxNodePhc::PhcCube> new_phc_cubes = stdgpu::vector<IVoxNodePhc::PhcCube>::createDeviceObject(phc_cubes_.size() - 1);
-        thrust::copy(phc_cubes_.device_begin(), it, new_phc_cubes.device_begin());
-        thrust::copy(it + 1, phc_cubes_.device_end(), new_phc_cubes.device_begin() + (it - phc_cubes_.device_begin()));
-        stdgpu::vector<IVoxNodePhc::PhcCube>::destroyDeviceObject(phc_cubes_);
-        phc_cubes_ = new_phc_cubes;
+    if (it != phc_cubes_.end() && found_it->idx == idx) {
+        phc_cubes_.erase(it);
     }
 }
 
@@ -102,7 +94,8 @@ std::size_t IVoxNodePhc::Size() const {
 }
 
 jlio::PointXYZINormal IVoxNodePhc::GetPoint(const std::size_t idx) const {
-    return phc_cubes_[idx].GetPoint();
+    IVoxNodePhc::PhcCube tmp = phc_cubes_[idx];
+    return tmp.GetPoint();
 }
 
 bool IVoxNodePhc::NNPoint(const jlio::PointXYZINormal& cur_pt, DistPoint& dist_point) const {
@@ -111,7 +104,7 @@ bool IVoxNodePhc::NNPoint(const jlio::PointXYZINormal& cur_pt, DistPoint& dist_p
     }
     uint32_t cur_idx = CalculatePhcIndex(cur_pt);
     PhcCube cube{cur_idx, cur_pt};
-    auto it = thrust::lower_bound(phc_cubes_.device_begin(), phc_cubes_.device_end(), cube, insert_point_lb_functor());
+    auto it = thrust::lower_bound(phc_cubes_.begin(), phc_cubes_.device_end(), cube, insert_point_lb_functor());
 
     if (it == phc_cubes_.device_end()) {
         it--;

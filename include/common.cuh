@@ -8,9 +8,6 @@
 void check(cudaError_t err, const char *const func, const char *const file, const int line);
 void checkLastCudaError(const char *const file, const int line);
 
-// debugging
-// #define USE_CUDA
-
 #define JLIO_FUNCTION __device__
 #define JLIO_KERNEL __global__
 #define JLIO_INLINE_FUNCTION __forceinline__ JLIO_FUNCTION
